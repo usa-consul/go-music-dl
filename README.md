@@ -46,6 +46,28 @@ Go Music DL 是一个音乐搜索与下载工具，支持 **Web 界面**、**TUI
 * 过滤需要付费的资源
 * **桌面应用特性**: 原生窗口、自动服务启动、智能缓存管理
 
+## Web 下载模式与 FFmpeg
+
+Web 端“设置”里新增了 **下载时内嵌元数据（封面/歌词）** 开关：
+
+* **默认关闭（推荐）**：走流式下载，速度更快，并支持 `Range` 断点/拖动播放。
+* **开启后**：下载时会尝试把封面、歌词写入音频文件（embed）。
+
+> ⚠️ 开启内嵌元数据依赖 **FFmpeg**。未安装 FFmpeg 时，会自动跳过内嵌并返回原始音频。
+
+可先验证 FFmpeg 是否可用：
+
+```bash
+ffmpeg -version
+
+```
+
+常见安装方式：
+
+* Windows: `winget install Gyan.FFmpeg`
+* macOS: `brew install ffmpeg`
+* Ubuntu/Debian: `sudo apt install ffmpeg`
+
 ## 新增改动（简要）
 
 * **Web 架构全面重构**：前端代码彻底模块化（拆分独立的 JS / CSS / HTML 模板），后端路由按业务域拆分（音乐查询、歌单管理、视频生成），大幅提升代码可维护性。
@@ -277,6 +299,9 @@ cargo build --release
 
 **Q: 如何设置 Cookie 获取更高音质？**
 Web 右上角“设置”里可添加平台 Cookie。
+
+**Q: 开启“内嵌元数据”后没生效？**
+先确认系统已安装 FFmpeg 且 `ffmpeg -version` 可执行；若不可用，程序会降级为原始音频下载（不内嵌封面/歌词）。
 
 
 ## 项目结构
