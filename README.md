@@ -375,3 +375,7 @@ go-music-dl/
 ## 免责声明
 
 仅供学习和技术交流使用。下载的音乐资源请在 24 小时内删除。
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/image?repos=guohuiyuan/go-music-dl&type=date&legend=top-left)](https://www.star-history.com/?repos=guohuiyuan%2Fgo-music-dl&type=date&legend=top-left)
