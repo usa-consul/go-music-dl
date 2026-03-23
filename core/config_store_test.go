@@ -89,8 +89,8 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	if defaults.DownloadToLocal {
 		t.Fatalf("default DownloadToLocal should be false")
 	}
-	if defaults.DownloadDir != filepath.Clean(DefaultWebDownloadDir) {
-		t.Fatalf("default DownloadDir mismatch: got %q want %q", defaults.DownloadDir, filepath.Clean(DefaultWebDownloadDir))
+	if defaults.DownloadDir != normalizeWebDownloadDir(DefaultWebDownloadDir) {
+		t.Fatalf("default DownloadDir mismatch: got %q want %q", defaults.DownloadDir, normalizeWebDownloadDir(DefaultWebDownloadDir))
 	}
 
 	if err := SaveWebSettings(WebSettings{
@@ -105,7 +105,7 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	want := WebSettings{
 		EmbedDownload:   true,
 		DownloadToLocal: true,
-		DownloadDir:     filepath.Clean(DefaultWebDownloadDir),
+		DownloadDir:     normalizeWebDownloadDir(DefaultWebDownloadDir),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved settings mismatch\ngot:  %#v\nwant: %#v", got, want)
@@ -119,7 +119,19 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	}
 
 	got = GetWebSettings()
-	if got.DownloadDir != filepath.Clean(customDir) {
-		t.Fatalf("custom download dir mismatch: got %q want %q", got.DownloadDir, filepath.Clean(customDir))
+	if got.DownloadDir != normalizeWebDownloadDir(customDir) {
+		t.Fatalf("custom download dir mismatch: got %q want %q", got.DownloadDir, normalizeWebDownloadDir(customDir))
+	}
+
+	absoluteDir := filepath.Join(baseDir, "downloads", "absolute")
+	if err := SaveWebSettings(WebSettings{
+		DownloadDir: absoluteDir,
+	}); err != nil {
+		t.Fatalf("save absolute download dir: %v", err)
+	}
+
+	got = GetWebSettings()
+	if got.DownloadDir != filepath.Clean(absoluteDir) {
+		t.Fatalf("absolute download dir mismatch: got %q want %q", got.DownloadDir, filepath.Clean(absoluteDir))
 	}
 }

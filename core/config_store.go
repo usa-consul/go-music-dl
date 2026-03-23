@@ -143,8 +143,16 @@ func normalizeWebSettings(settings WebSettings) WebSettings {
 	if settings.DownloadDir == "" {
 		settings.DownloadDir = DefaultWebDownloadDir
 	}
-	settings.DownloadDir = filepath.Clean(settings.DownloadDir)
+	settings.DownloadDir = normalizeWebDownloadDir(settings.DownloadDir)
 	return settings
+}
+
+func normalizeWebDownloadDir(dir string) string {
+	cleaned := filepath.Clean(dir)
+	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, `\\`) {
+		return cleaned
+	}
+	return filepath.ToSlash(cleaned)
 }
 
 func GetWebSettings() WebSettings {
