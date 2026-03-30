@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,9 +65,74 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 		playlistSupported[s] = true
 	}
 
+	settings := core.GetWebSettings()
+	defaultPageSize := settings.WebPageSize
+	if defaultPageSize <= 0 {
+		defaultPageSize = core.DefaultWebPageSize
+	}
+	pageSize := defaultPageSize
+	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			pageSize = n
+		}
+	}
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	page := 1
+	if raw := strings.TrimSpace(c.Query("page")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			page = n
+		}
+	}
+
+	totalCount := 0
+	if len(songs) > 0 {
+		totalCount = len(songs)
+	} else if len(playlists) > 0 {
+		totalCount = len(playlists)
+	}
+
+	totalPages := 1
+	pageStart := 0
+	pageEnd := totalCount
+	if totalCount > 0 {
+		totalPages = (totalCount + pageSize - 1) / pageSize
+		if page > totalPages {
+			page = totalPages
+		}
+		pageStart = (page - 1) * pageSize
+		if pageStart < 0 {
+			pageStart = 0
+		}
+		pageEnd = pageStart + pageSize
+		if pageEnd > totalCount {
+			pageEnd = totalCount
+		}
+
+		if len(songs) > 0 {
+			songs = songs[pageStart:pageEnd]
+		}
+		if len(playlists) > 0 {
+			playlists = playlists[pageStart:pageEnd]
+		}
+	}
+
+	pageStartDisplay := 0
+	if totalCount > 0 {
+		pageStartDisplay = pageStart + 1
+	}
+
 	c.HTML(200, "index.html", gin.H{
 		"Result":             songs,
 		"Playlists":          playlists,
+		"Page":               page,
+		"PageSize":           pageSize,
+		"TotalCount":         totalCount,
+		"TotalPages":         totalPages,
+		"PageStart":          pageStartDisplay,
+		"PageEnd":            pageEnd,
 		"Keyword":            q,
 		"AllSources":         allSrc,
 		"DefaultSources":     core.GetDefaultSourceNames(),

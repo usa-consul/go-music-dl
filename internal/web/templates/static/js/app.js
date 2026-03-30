@@ -3,18 +3,24 @@
 const API_ROOT = window.API_ROOT;
 const WEB_SETTINGS_KEY = 'musicdl:web_settings';
 const INSPECT_REQUEST_DELAY_MS = 100;
+const DEFAULT_WEB_PAGE_SIZE = 50;
+const DEFAULT_CLI_PAGE_SIZE = 50;
 
 let webSettings = {
     embedDownload: false,
     downloadToLocal: false,
-    downloadDir: 'data/downloads'
+    downloadDir: 'data/downloads',
+    webPageSize: DEFAULT_WEB_PAGE_SIZE,
+    cliPageSize: DEFAULT_CLI_PAGE_SIZE
 };
 
 function normalizeWebSettings(raw) {
     const next = {
         embedDownload: false,
         downloadToLocal: false,
-        downloadDir: 'data/downloads'
+        downloadDir: 'data/downloads',
+        webPageSize: DEFAULT_WEB_PAGE_SIZE,
+        cliPageSize: DEFAULT_CLI_PAGE_SIZE
     };
 
     if (!raw || typeof raw !== 'object') {
@@ -29,6 +35,12 @@ function normalizeWebSettings(raw) {
     }
     if (typeof raw.downloadDir === 'string' && raw.downloadDir.trim() !== '') {
         next.downloadDir = raw.downloadDir.trim();
+    }
+    if (Number.isInteger(raw.webPageSize) && raw.webPageSize > 0) {
+        next.webPageSize = Math.min(raw.webPageSize, 200);
+    }
+    if (Number.isInteger(raw.cliPageSize) && raw.cliPageSize > 0) {
+        next.cliPageSize = Math.min(raw.cliPageSize, 200);
     }
 
     return next;
@@ -68,6 +80,16 @@ function applyWebSettings(settings) {
     const dirInput = document.getElementById('setting-download-dir');
     if (dirInput) {
         dirInput.value = webSettings.downloadDir;
+    }
+
+    const webPageSizeInput = document.getElementById('setting-web-page-size');
+    if (webPageSizeInput) {
+        webPageSizeInput.value = String(webSettings.webPageSize || DEFAULT_WEB_PAGE_SIZE);
+    }
+
+    const cliPageSizeInput = document.getElementById('setting-cli-page-size');
+    if (cliPageSizeInput) {
+        cliPageSizeInput.value = String(webSettings.cliPageSize || DEFAULT_CLI_PAGE_SIZE);
     }
 
     refreshDownloadLinks();
@@ -285,6 +307,16 @@ document.addEventListener('DOMContentLoaded', function() {
         toggleSearchType(initialTypeEl.value);
     }
 
+    const searchForm = document.getElementById('search-form');
+    if (searchForm) {
+        searchForm.addEventListener('submit', function() {
+            const pageInput = searchForm.querySelector('input[name="page"]');
+            if (pageInput) {
+                pageInput.value = '1';
+            }
+        });
+    }
+
     const cards = document.querySelectorAll('.song-card');
     cards.forEach((card, index) => {
         queueInspectSong(card, index * INSPECT_REQUEST_DELAY_MS);
@@ -326,6 +358,8 @@ document.addEventListener('DOMContentLoaded', function() {
         await handleDownloadClick(link);
     });
 
+    updateBatchToolbar();
+
     syncAllPlayButtons();
 });
 
@@ -360,6 +394,44 @@ function goToRecommend() {
     } else {
         window.location.href = API_ROOT + '/recommend?sources=' + selected.join('&sources=');
     }
+}
+
+function goToPage(page) {
+    const target = parseInt(page, 10);
+    if (!Number.isFinite(target) || target < 1) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', String(target));
+    window.location.href = url.toString();
+}
+
+function parsePositiveInt(value, fallbackValue) {
+    const parsed = Number.parseInt(String(value || ''), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return fallbackValue;
+    }
+    return parsed;
+}
+
+function songFromCard(card) {
+    if (!card) return null;
+    const ds = card.dataset;
+    if (!ds.id || !ds.source) return null;
+
+    let coverUrl = ds.cover || '';
+    const imgEl = card.querySelector('.cover-wrapper img');
+    if (imgEl && imgEl.src) {
+        coverUrl = imgEl.src;
+    }
+
+    return {
+        id: ds.id,
+        source: ds.source,
+        name: ds.name || '',
+        artist: ds.artist || '',
+        duration: parsePositiveInt(ds.duration, 0),
+        cover: coverUrl,
+        extra: ds.extra || ''
+    };
 }
 
 function inspectSong(card) {
@@ -430,10 +502,15 @@ function openCookieModal() {
 }
 
 function saveCookies() {
+    const webPageSizeInput = document.getElementById('setting-web-page-size');
+    const cliPageSizeInput = document.getElementById('setting-cli-page-size');
+
     const nextSettings = normalizeWebSettings({
         embedDownload: !!document.getElementById('setting-embed-download')?.checked,
         downloadToLocal: !!document.getElementById('setting-download-to-local')?.checked,
-        downloadDir: document.getElementById('setting-download-dir')?.value || ''
+        downloadDir: document.getElementById('setting-download-dir')?.value || '',
+        webPageSize: parsePositiveInt(webPageSizeInput?.value, DEFAULT_WEB_PAGE_SIZE),
+        cliPageSize: parsePositiveInt(cliPageSizeInput?.value, DEFAULT_CLI_PAGE_SIZE)
     });
 
     const data = {};
@@ -712,6 +789,7 @@ function updateCardWithSong(card, song) {
     if (currentPlayingId === oldId) {
         currentPlayingId = song.id;
     }
+
     syncAllPlayButtons();
     queueInspectSong(card);
     syncSongToAPlayer(oldId, song);
@@ -917,21 +995,21 @@ function getSelectedSongs() {
     checkedBoxes.forEach(cb => {
         const card = cb.closest('.song-card');
         if (card) {
+            const song = songFromCard(card);
+            if (!song) return;
             const ds = card.dataset;
-            let coverUrl = '';
-            const imgEl = card.querySelector('.cover-wrapper img');
-            if (imgEl) coverUrl = imgEl.src;
-            
+
             songs.push({
-                id: ds.id,
-                source: ds.source,
-                name: ds.name,
-                artist: ds.artist,
-                url: buildDownloadURL(ds.id, ds.source, ds.name, ds.artist, ds.cover || '', ds.extra || ''),
-                cover: coverUrl,
+                id: song.id,
+                source: song.source,
+                name: song.name,
+                artist: song.artist,
+                duration: song.duration,
+                extra: song.extra,
+                url: buildDownloadURL(song.id, song.source, song.name, song.artist, song.cover || '', song.extra || ''),
+                cover: song.cover,
                 lrc: `${API_ROOT}/lyric?id=${encodeURIComponent(ds.id)}&source=${ds.source}`,
-                theme: '#10b981',
-                custom_id: ds.id
+                theme: '#10b981'
             });
         }
     });
@@ -1028,6 +1106,154 @@ function batchSwitchSource() {
             }
         }
     });
+}
+
+function collectSongsFromDocument(root) {
+    const songs = [];
+    const cards = root.querySelectorAll('.song-card');
+    cards.forEach(card => {
+        const song = songFromCard(card);
+        if (!song) return;
+        songs.push({
+            ...song,
+            url: buildDownloadURL(song.id, song.source, song.name, song.artist, song.cover || '', song.extra || '')
+        });
+    });
+    return songs;
+}
+
+async function fetchSongsFromPage(pageNum) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('page', String(pageNum));
+    const response = await fetch(url.toString(), { credentials: 'same-origin' });
+    if (!response.ok) {
+        throw new Error(`第 ${pageNum} 页加载失败 (HTTP ${response.status})`);
+    }
+    const html = await response.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    return collectSongsFromDocument(doc);
+}
+
+async function getAllSongsAcrossPages() {
+    const toolbar = document.getElementById('batch-toolbar');
+    const totalPages = parsePositiveInt(toolbar?.dataset.totalPages, 1);
+    const currentPage = parsePositiveInt(toolbar?.dataset.currentPage, 1);
+
+    const songsMap = new Map();
+    for (let page = 1; page <= totalPages; page++) {
+        const pageSongs = page === currentPage
+            ? collectSongsFromDocument(document)
+            : await fetchSongsFromPage(page);
+
+        pageSongs.forEach(song => {
+            const key = `${song.id || ''}::${song.source || ''}`;
+            if (!songsMap.has(key)) {
+                songsMap.set(key, song);
+            }
+        });
+    }
+
+    return Array.from(songsMap.values());
+}
+
+async function batchDownloadAllSongs() {
+    const btnAll = document.getElementById('btn-batch-dl-all');
+    const originalBtnHTML = btnAll ? btnAll.innerHTML : '';
+
+    let songs = [];
+    try {
+        if (btnAll) {
+            btnAll.disabled = true;
+            btnAll.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 收集中';
+        }
+        songs = await getAllSongsAcrossPages();
+    } catch (error) {
+        alert((error && error.message) ? error.message : '收集全部歌曲失败');
+        if (btnAll) {
+            btnAll.disabled = false;
+            btnAll.innerHTML = originalBtnHTML;
+        }
+        return;
+    }
+
+    if (songs.length === 0) {
+        alert('当前没有可下载的歌曲');
+        if (btnAll) {
+            btnAll.disabled = false;
+            btnAll.innerHTML = originalBtnHTML;
+        }
+        return;
+    }
+
+    const totalCount = songs.length;
+    if (webSettings.downloadToLocal) {
+        if (!confirm(`准备将全部 ${totalCount} 首歌曲保存到本地目录：\n${webSettings.downloadDir}`)) {
+            if (btnAll) {
+                btnAll.disabled = false;
+                btnAll.innerHTML = originalBtnHTML;
+            }
+            return;
+        }
+    } else {
+        if (!confirm(`准备下载全部 ${totalCount} 首歌曲。\n下载会依次开始，请保持页面打开直到提示完成。`)) {
+            if (btnAll) {
+                btnAll.disabled = false;
+                btnAll.innerHTML = originalBtnHTML;
+            }
+            return;
+        }
+    }
+
+    const batchDl = document.getElementById('btn-batch-dl');
+    const batchSwitch = document.getElementById('btn-batch-switch');
+    if (batchDl) batchDl.disabled = true;
+    if (batchSwitch) batchSwitch.disabled = true;
+    if (btnAll) {
+        btnAll.disabled = true;
+        btnAll.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 下载中';
+    }
+
+    let success = 0;
+    let warningCount = 0;
+    const failures = [];
+
+    try {
+        for (const song of songs) {
+            try {
+                const result = webSettings.downloadToLocal
+                    ? await requestLocalDownload(song.url)
+                    : await requestBrowserDownload(song);
+                success++;
+                if (result && result.warning) {
+                    warningCount++;
+                }
+            } catch (error) {
+                failures.push({
+                    song,
+                    reason: (error && error.message) ? error.message : '下载失败'
+                });
+            }
+        }
+
+        let message = webSettings.downloadToLocal
+            ? `全部本地保存完成，成功 ${success}/${songs.length}`
+            : `下载全部已完成，成功 ${success}/${songs.length}`;
+        if (webSettings.downloadToLocal) {
+            message += `\n目录：${webSettings.downloadDir}`;
+        }
+        if (warningCount > 0) {
+            message += `\n\n共 ${warningCount} 首触发了降级提示，请查看终端日志`;
+        }
+        message += buildBatchFailureMessage(failures, '失败');
+        alert(message);
+    } finally {
+        if (btnAll) {
+            btnAll.disabled = false;
+            btnAll.innerHTML = originalBtnHTML;
+        }
+        updateBatchToolbar();
+    }
 }
 
 

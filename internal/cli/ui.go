@@ -371,6 +371,7 @@ type modelState struct {
 	statusMsg string // 底部状态栏消息
 
 	windowWidth int
+	pageSize    int
 }
 
 // 启动 UI 的入口
@@ -390,6 +391,12 @@ func StartUI(initialKeyword string, sources []string, outDir string, withCover b
 
 	prog := progress.New(progress.WithDefaultGradient())
 
+	settings := core.GetWebSettings()
+	pageSize := settings.CliPageSize
+	if pageSize <= 0 {
+		pageSize = core.DefaultCLIPageSize
+	}
+
 	initialState := stateInput
 	if initialKeyword != "" {
 		ti.SetValue(initialKeyword)
@@ -407,6 +414,7 @@ func StartUI(initialKeyword string, sources []string, outDir string, withCover b
 		outDir:     outDir,
 		withCover:  withCover,
 		withLyrics: withLyrics,
+		pageSize:   pageSize,
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -526,9 +534,9 @@ func (m modelState) updateLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("解析成功: %s。按回车下载。", m.songs[0].Name)
 		} else {
 			if m.searchType == "playlist" { // 从歌单进入
-				m.statusMsg = fmt.Sprintf("歌单解析完成，包含 %d 首歌曲。空格选择，回车下载。", len(m.songs))
+				m.statusMsg = fmt.Sprintf("歌单解析完成，包含 %d 首歌曲（每页 %d）。空格选择，回车下载。", len(m.songs), m.currentPageSize())
 			} else {
-				m.statusMsg = fmt.Sprintf("找到 %d 首歌曲。空格选择，回车下载。", len(m.songs))
+				m.statusMsg = fmt.Sprintf("找到 %d 首歌曲（每页 %d）。空格选择，回车下载。", len(m.songs), m.currentPageSize())
 			}
 		}
 		return m, nil
@@ -536,7 +544,7 @@ func (m modelState) updateLoading(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.playlists = msg
 		m.state = statePlaylistResult
 		m.cursor = 0
-		m.statusMsg = fmt.Sprintf("找到 %d 个歌单。回车查看详情。", len(m.playlists))
+		m.statusMsg = fmt.Sprintf("找到 %d 个歌单（每页 %d）。回车查看详情。", len(m.playlists), m.currentPageSize())
 		return m, textinput.Blink
 	case searchErrorMsg:
 		m.state = stateInput
@@ -559,6 +567,10 @@ func (m modelState) updatePlaylistResult(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.playlists)-1 {
 				m.cursor++
 			}
+		case "pgup":
+			m.cursor = m.moveCursorByPage(m.cursor, -1, len(m.playlists))
+		case "pgdown":
+			m.cursor = m.moveCursorByPage(m.cursor, 1, len(m.playlists))
 		case "q":
 			return m, tea.Quit
 		case "esc", "b":
@@ -594,6 +606,10 @@ func (m modelState) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(m.songs)-1 {
 				m.cursor++
 			}
+		case "pgup":
+			m.cursor = m.moveCursorByPage(m.cursor, -1, len(m.songs))
+		case "pgdown":
+			m.cursor = m.moveCursorByPage(m.cursor, 1, len(m.songs))
 		case " ":
 			if _, ok := m.selected[m.cursor]; ok {
 				delete(m.selected, m.cursor)
@@ -940,9 +956,6 @@ func searchCmd(keyword string, searchType string, sources []string) tea.Cmd {
 				if err == nil && len(res) > 0 {
 					for i := range res {
 						res[i].Source = s
-					}
-					if len(res) > 10 {
-						res = res[:10]
 					}
 					mu.Lock()
 					allSongs = append(allSongs, res...)
@@ -1472,14 +1485,14 @@ func (m modelState) View() string {
 		statusStyle := lipgloss.NewStyle().Foreground(subtleColor)
 		s.WriteString(statusStyle.Render(m.statusMsg))
 		s.WriteString("\n\n")
-		s.WriteString(statusStyle.Render("↑/↓: 移动 • 空格: 选择 • a: 全选/清空 • r: 换源 • Enter: 下载 • b: 返回 • q: 退出"))
+		s.WriteString(statusStyle.Render("↑/↓: 移动 • PgUp/PgDn: 翻页 • 空格: 选择 • a: 全选/清空 • r: 换源 • Enter: 下载 • b: 返回 • q: 退出"))
 	case statePlaylistResult: // 新增
 		s.WriteString(m.renderPlaylistTable())
 		s.WriteString("\n")
 		statusStyle := lipgloss.NewStyle().Foreground(subtleColor)
 		s.WriteString(statusStyle.Render(m.statusMsg))
 		s.WriteString("\n\n")
-		s.WriteString(statusStyle.Render("↑/↓: 移动 • Enter: 查看详情 • b: 返回 • q: 退出"))
+		s.WriteString(statusStyle.Render("↑/↓: 移动 • PgUp/PgDn: 翻页 • Enter: 查看详情 • b: 返回 • q: 退出"))
 	case stateDownloading:
 		s.WriteString("\n")
 		s.WriteString(m.progress.View() + "\n\n")
@@ -1522,6 +1535,8 @@ func (m modelState) renderTable() string {
 		headerStyle.Width(colSrc).Render("来源"),
 	)
 	b.WriteString(header + "\n")
+	currentPage, totalPages := m.currentPageInfo(len(m.songs))
+	b.WriteString(lipgloss.NewStyle().Foreground(subtleColor).Render(fmt.Sprintf("第 %d/%d 页，每页 %d 条", currentPage, totalPages, m.currentPageSize())) + "\n")
 	start, end := m.calculatePagination()
 	for i := start; i < end; i++ {
 		song := m.songs[i]
@@ -1592,18 +1607,10 @@ func (m modelState) renderPlaylistTable() string {
 	)
 	b.WriteString(header + "\n")
 
-	height := 15
-	start := 0
-	end := len(m.playlists)
-	if len(m.playlists) > height {
-		if m.cursor >= height {
-			start = m.cursor - height + 1
-		}
-		end = start + height
-		if end > len(m.playlists) {
-			end = len(m.playlists)
-		}
-	}
+	currentPage, totalPages := m.currentPageInfo(len(m.playlists))
+	b.WriteString(lipgloss.NewStyle().Foreground(subtleColor).Render(fmt.Sprintf("第 %d/%d 页，每页 %d 条", currentPage, totalPages, m.currentPageSize())) + "\n")
+
+	start, end := m.calculatePlaylistPagination()
 
 	for i := start; i < end; i++ {
 		pl := m.playlists[i]
@@ -1635,17 +1642,62 @@ func (m modelState) renderPlaylistTable() string {
 }
 
 func (m modelState) calculatePagination() (int, int) {
-	height := 15
-	start := 0
-	end := len(m.songs)
-	if len(m.songs) > height {
-		if m.cursor >= height {
-			start = m.cursor - height + 1
-		}
-		end = start + height
-		if end > len(m.songs) {
-			end = len(m.songs)
-		}
+	return m.pageRangeForCursor(len(m.songs))
+}
+
+func (m modelState) calculatePlaylistPagination() (int, int) {
+	return m.pageRangeForCursor(len(m.playlists))
+}
+
+func (m modelState) currentPageSize() int {
+	if m.pageSize <= 0 {
+		return core.DefaultCLIPageSize
+	}
+	return m.pageSize
+}
+
+func (m modelState) pageRangeForCursor(total int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	pageSize := m.currentPageSize()
+	start := (m.cursor / pageSize) * pageSize
+	if start < 0 {
+		start = 0
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
 	}
 	return start, end
+}
+
+func (m modelState) currentPageInfo(total int) (int, int) {
+	if total <= 0 {
+		return 1, 1
+	}
+	pageSize := m.currentPageSize()
+	totalPages := (total + pageSize - 1) / pageSize
+	page := (m.cursor / pageSize) + 1
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages {
+		page = totalPages
+	}
+	return page, totalPages
+}
+
+func (m modelState) moveCursorByPage(cursor int, delta int, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	next := cursor + delta*m.currentPageSize()
+	if next < 0 {
+		next = 0
+	}
+	if next >= total {
+		next = total - 1
+	}
+	return next
 }

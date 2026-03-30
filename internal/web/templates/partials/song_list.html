@@ -3,14 +3,17 @@
     <div class="list-header">
         <div>
             {{ if .ColID }}
-            <span class="result-count" style="font-size: 16px;"><i class="fa-solid fa-folder-open"></i> 正在查看: <span style="color:#10b981; margin-left: 5px;">{{ .ColName }}</span> (共 {{ len .Result }} 首)</span>
+            <span class="result-count" style="font-size: 16px;"><i class="fa-solid fa-folder-open"></i> 正在查看: <span style="color:#10b981; margin-left: 5px;">{{ .ColName }}</span> (共 {{ .TotalCount }} 首)</span>
             {{ else }}
-            <span class="result-count"><i class="fa-solid fa-music"></i> 找到 <span class="count">{{ len .Result }}</span> 首歌曲</span>
+            <span class="result-count"><i class="fa-solid fa-music"></i> 找到 <span class="count">{{ .TotalCount }}</span> 首歌曲</span>
             {{ if .PlaylistLink }}
                 <a href="{{ .PlaylistLink }}" target="_blank" class="playlist-source-link">
                     <i class="fa-solid fa-arrow-up-right-from-square"></i> 打开原始歌单
                 </a>
             {{ end }}
+            {{ end }}
+            {{ if gt .TotalCount 0 }}
+            <div class="page-summary">当前第 {{ .Page }} / {{ .TotalPages }} 页，显示 {{ .PageStart }} - {{ .PageEnd }} / {{ .TotalCount }}</div>
             {{ end }}
         </div>
 
@@ -24,7 +27,7 @@
         </div>
     </div>
 
-    <div class="batch-toolbar" id="batch-toolbar">
+    <div class="batch-toolbar" id="batch-toolbar" data-current-page="{{ .Page }}" data-total-pages="{{ .TotalPages }}" data-total-count="{{ .TotalCount }}">
         <div class="batch-info">
             <div>
                 <label><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)"> 全选</label>
@@ -40,6 +43,9 @@
             </button>
             <button class="btn-pill btn-pill-dl" id="btn-batch-dl" onclick="batchDownload()" disabled>
                 <i class="fa-solid fa-download"></i> 批量下载
+            </button>
+            <button class="btn-pill btn-pill-dl" id="btn-batch-dl-all" onclick="batchDownloadAllSongs()">
+                <i class="fa-solid fa-layer-group"></i> 下载全部
             </button>
         </div>
     </div>
@@ -128,6 +134,18 @@
         </li>
         {{ end }}
     </ul>
+
+    {{ if gt .TotalPages 1 }}
+    <div class="pagination-bar">
+        <button type="button" class="ctrl-btn primary" onclick="goToPage({{ .Page }} - 1)" {{ if le .Page 1 }}disabled{{ end }}>
+            <i class="fa-solid fa-chevron-left"></i> 上一页
+        </button>
+        <span class="pagination-text">第 {{ .Page }} / {{ .TotalPages }} 页</span>
+        <button type="button" class="ctrl-btn primary" onclick="goToPage({{ .Page }} + 1)" {{ if ge .Page .TotalPages }}disabled{{ end }}>
+            下一页 <i class="fa-solid fa-chevron-right"></i>
+        </button>
+    </div>
+    {{ end }}
 {{ else if .Keyword }}
     {{ if not .Error }}
     <div class="no-results">

@@ -92,11 +92,19 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	if defaults.DownloadDir != normalizeWebDownloadDir(DefaultWebDownloadDir) {
 		t.Fatalf("default DownloadDir mismatch: got %q want %q", defaults.DownloadDir, normalizeWebDownloadDir(DefaultWebDownloadDir))
 	}
+	if defaults.WebPageSize != DefaultWebPageSize {
+		t.Fatalf("default WebPageSize mismatch: got %d want %d", defaults.WebPageSize, DefaultWebPageSize)
+	}
+	if defaults.CliPageSize != DefaultCLIPageSize {
+		t.Fatalf("default CliPageSize mismatch: got %d want %d", defaults.CliPageSize, DefaultCLIPageSize)
+	}
 
 	if err := SaveWebSettings(WebSettings{
 		EmbedDownload:   true,
 		DownloadToLocal: true,
 		DownloadDir:     "",
+		WebPageSize:     100,
+		CliPageSize:     120,
 	}); err != nil {
 		t.Fatalf("save web settings: %v", err)
 	}
@@ -106,6 +114,8 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 		EmbedDownload:   true,
 		DownloadToLocal: true,
 		DownloadDir:     normalizeWebDownloadDir(DefaultWebDownloadDir),
+		WebPageSize:     100,
+		CliPageSize:     120,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("saved settings mismatch\ngot:  %#v\nwant: %#v", got, want)
@@ -121,6 +131,12 @@ func TestWebSettingsDefaultAndPersist(t *testing.T) {
 	got = GetWebSettings()
 	if got.DownloadDir != normalizeWebDownloadDir(customDir) {
 		t.Fatalf("custom download dir mismatch: got %q want %q", got.DownloadDir, normalizeWebDownloadDir(customDir))
+	}
+	if got.WebPageSize != DefaultWebPageSize {
+		t.Fatalf("custom save should fallback WebPageSize to default: got %d want %d", got.WebPageSize, DefaultWebPageSize)
+	}
+	if got.CliPageSize != DefaultCLIPageSize {
+		t.Fatalf("custom save should fallback CliPageSize to default: got %d want %d", got.CliPageSize, DefaultCLIPageSize)
 	}
 
 	absoluteDir := filepath.Join(baseDir, "downloads", "absolute")

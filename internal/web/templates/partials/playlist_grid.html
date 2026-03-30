@@ -11,6 +11,14 @@
 {{ end }}
 
 {{ if .Playlists }}
+    <div class="list-header" style="margin-bottom: 15px;">
+        <div>
+            <span class="result-count"><i class="fa-solid fa-list"></i> 找到 <span class="count">{{ .TotalCount }}</span> 个歌单</span>
+            {{ if gt .TotalCount 0 }}
+            <div class="page-summary">当前第 {{ .Page }} / {{ .TotalPages }} 页，显示 {{ .PageStart }} - {{ .PageEnd }} / {{ .TotalCount }}</div>
+            {{ end }}
+        </div>
+    </div>
     <div class="playlist-grid-container">
         {{ range .Playlists }}
         <div class="playlist-card" onclick="location.href='{{$.Root}}/{{ if eq .Source "local" }}collection?id={{.ID}}{{ else }}playlist?id={{.ID}}&source={{.Source}}{{ end }}'">
@@ -45,5 +53,16 @@
         </div>
         {{ end }}
     </div>
+    {{ if gt .TotalPages 1 }}
+    <div class="pagination-bar">
+        <button type="button" class="ctrl-btn primary" onclick="goToPage({{ .Page }} - 1)" {{ if le .Page 1 }}disabled{{ end }}>
+            <i class="fa-solid fa-chevron-left"></i> 上一页
+        </button>
+        <span class="pagination-text">第 {{ .Page }} / {{ .TotalPages }} 页</span>
+        <button type="button" class="ctrl-btn primary" onclick="goToPage({{ .Page }} + 1)" {{ if ge .Page .TotalPages }}disabled{{ end }}>
+            下一页 <i class="fa-solid fa-chevron-right"></i>
+        </button>
+    </div>
+    {{ end }}
 {{end}}
 {{end}}

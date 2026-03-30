@@ -16,6 +16,8 @@ import (
 const (
 	ConfigDBFile          = "data/settings.db"
 	DefaultWebDownloadDir = "data/downloads"
+	DefaultWebPageSize    = 50
+	DefaultCLIPageSize    = 50
 	webSettingsKey        = "web_settings"
 )
 
@@ -35,6 +37,8 @@ type WebSettings struct {
 	EmbedDownload   bool   `json:"embedDownload"`
 	DownloadToLocal bool   `json:"downloadToLocal"`
 	DownloadDir     string `json:"downloadDir"`
+	WebPageSize     int    `json:"webPageSize"`
+	CliPageSize     int    `json:"cliPageSize"`
 }
 
 var (
@@ -135,6 +139,8 @@ func defaultWebSettings() WebSettings {
 		EmbedDownload:   false,
 		DownloadToLocal: false,
 		DownloadDir:     DefaultWebDownloadDir,
+		WebPageSize:     DefaultWebPageSize,
+		CliPageSize:     DefaultCLIPageSize,
 	})
 }
 
@@ -142,6 +148,12 @@ func normalizeWebSettings(settings WebSettings) WebSettings {
 	settings.DownloadDir = strings.TrimSpace(settings.DownloadDir)
 	if settings.DownloadDir == "" {
 		settings.DownloadDir = DefaultWebDownloadDir
+	}
+	if settings.WebPageSize <= 0 {
+		settings.WebPageSize = DefaultWebPageSize
+	}
+	if settings.CliPageSize <= 0 {
+		settings.CliPageSize = DefaultCLIPageSize
 	}
 	settings.DownloadDir = normalizeWebDownloadDir(settings.DownloadDir)
 	return settings
