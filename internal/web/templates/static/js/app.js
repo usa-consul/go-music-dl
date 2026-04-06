@@ -443,6 +443,7 @@ function songFromCard(card) {
         source: ds.source,
         name: ds.name || '',
         artist: ds.artist || '',
+        album: ds.album || '',
         duration: parsePositiveInt(ds.duration, 0),
         cover: coverUrl,
         extra: ds.extra || ''
@@ -567,6 +568,229 @@ function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+const DEFAULT_DOCUMENT_TITLE = document.title;
+
+function mediaSessionControllerSupported() {
+    return typeof navigator !== 'undefined' && !!navigator.mediaSession;
+}
+
+function mediaSessionMetadataSupported() {
+    return mediaSessionControllerSupported() && typeof window.MediaMetadata === 'function';
+}
+
+function getCurrentAPlayerAudio() {
+    if (!ap || !ap.list || !Array.isArray(ap.list.audios)) return null;
+    const index = ap.list.index;
+    if (typeof index !== 'number' || index < 0) return null;
+    return ap.list.audios[index] || null;
+}
+
+function buildMediaSessionArtwork(coverUrl) {
+    const src = String(coverUrl || '').trim();
+    if (!src) return [];
+
+    try {
+        return [{ src: new URL(src, window.location.href).toString() }];
+    } catch (_) {
+        return [{ src }];
+    }
+}
+
+function updateDocumentTitleForMedia(audio) {
+    if (!audio || !audio.name) {
+        document.title = DEFAULT_DOCUMENT_TITLE;
+        return;
+    }
+
+    const parts = [audio.name];
+    if (audio.artist) {
+        parts.push(audio.artist);
+    }
+    document.title = `${parts.join(' - ')} | music-dl`;
+}
+
+function updateMediaSessionMetadata(audio = getCurrentAPlayerAudio()) {
+    if (!mediaSessionControllerSupported()) return;
+
+    if (!audio) {
+        if (mediaSessionMetadataSupported()) {
+            navigator.mediaSession.metadata = null;
+        }
+        updateDocumentTitleForMedia(null);
+        return;
+    }
+
+    if (!mediaSessionMetadataSupported()) {
+        updateDocumentTitleForMedia(audio);
+        return;
+    }
+
+    const metadata = {
+        title: audio.name || 'music-dl',
+        artist: audio.artist || ''
+    };
+
+    if (audio.album) {
+        metadata.album = audio.album;
+    }
+
+    const artwork = buildMediaSessionArtwork(audio.cover);
+    if (artwork.length > 0) {
+        metadata.artwork = artwork;
+    }
+
+    navigator.mediaSession.metadata = new MediaMetadata(metadata);
+    updateDocumentTitleForMedia(audio);
+}
+
+function updateMediaSessionPlaybackState() {
+    if (!mediaSessionControllerSupported()) return;
+
+    const audio = getCurrentAPlayerAudio();
+    if (!ap?.audio || !audio) {
+        navigator.mediaSession.playbackState = 'none';
+        return;
+    }
+
+    navigator.mediaSession.playbackState = ap.audio.paused ? 'paused' : 'playing';
+}
+
+function updateMediaSessionPositionState() {
+    if (!mediaSessionControllerSupported()) return;
+    if (!ap?.audio || typeof navigator.mediaSession.setPositionState !== 'function') return;
+
+    const duration = Number(ap.audio.duration);
+    const position = Number(ap.audio.currentTime);
+    const playbackRate = Number(ap.audio.playbackRate) || 1;
+
+    if (!Number.isFinite(duration) || duration <= 0) return;
+    if (!Number.isFinite(position) || position < 0) return;
+
+    try {
+        navigator.mediaSession.setPositionState({
+            duration,
+            playbackRate,
+            position: Math.min(position, duration)
+        });
+    } catch (_) {
+    }
+}
+
+function syncMediaSession(audio = getCurrentAPlayerAudio()) {
+    if (!mediaSessionControllerSupported()) return;
+    updateMediaSessionMetadata(audio);
+    updateMediaSessionPlaybackState();
+    updateMediaSessionPositionState();
+}
+
+function clearMediaSession() {
+    if (!mediaSessionControllerSupported()) return;
+    if (mediaSessionMetadataSupported()) {
+        navigator.mediaSession.metadata = null;
+    }
+    navigator.mediaSession.playbackState = 'none';
+    updateDocumentTitleForMedia(null);
+}
+
+function switchTrackByOffset(offset) {
+    if (!ap?.list?.audios?.length) return;
+
+    const total = ap.list.audios.length;
+    const currentIndex = (typeof ap.list.index === 'number' && ap.list.index >= 0) ? ap.list.index : 0;
+    const nextIndex = (currentIndex + offset + total) % total;
+
+    ap.list.switch(nextIndex);
+    ap.play();
+}
+
+function seekCurrentTrack(position) {
+    if (!ap?.audio) return;
+
+    const duration = Number(ap.audio.duration);
+    if (!Number.isFinite(duration) || duration <= 0) return;
+
+    const target = Math.max(0, Math.min(duration, Number(position) || 0));
+    try {
+        if (typeof ap.audio.fastSeek === 'function') {
+            ap.audio.fastSeek(target);
+        } else {
+            ap.audio.currentTime = target;
+        }
+    } catch (_) {
+        ap.audio.currentTime = target;
+    }
+
+    updateMediaSessionPositionState();
+}
+
+function adjustCurrentTrackPosition(offset) {
+    if (!ap?.audio) return;
+    seekCurrentTrack((Number(ap.audio.currentTime) || 0) + offset);
+}
+
+function registerMediaSessionAction(action, handler) {
+    if (!mediaSessionControllerSupported()) return;
+    try {
+        navigator.mediaSession.setActionHandler(action, handler);
+    } catch (_) {
+    }
+}
+
+function bindMediaSessionAudioEvents() {
+    if (!ap?.audio || ap.audio.dataset.mediaSessionBound === '1') return;
+
+    ap.audio.dataset.mediaSessionBound = '1';
+    const syncPosition = () => updateMediaSessionPositionState();
+    const syncState = () => {
+        updateMediaSessionPlaybackState();
+        updateMediaSessionPositionState();
+    };
+
+    ['timeupdate', 'durationchange', 'loadedmetadata', 'seeked', 'ratechange'].forEach((eventName) => {
+        ap.audio.addEventListener(eventName, syncPosition);
+    });
+    ['play', 'pause'].forEach((eventName) => {
+        ap.audio.addEventListener(eventName, syncState);
+    });
+}
+
+function setupMediaSession() {
+    if (!mediaSessionControllerSupported()) return;
+
+    bindMediaSessionAudioEvents();
+
+    registerMediaSessionAction('play', () => {
+        if (!ap?.list?.audios?.length) return;
+        ap.play();
+    });
+    registerMediaSessionAction('pause', () => {
+        ap?.pause();
+    });
+    registerMediaSessionAction('stop', () => {
+        ap?.pause();
+        seekCurrentTrack(0);
+        syncMediaSession();
+    });
+    registerMediaSessionAction('previoustrack', () => {
+        switchTrackByOffset(-1);
+    });
+    registerMediaSessionAction('nexttrack', () => {
+        switchTrackByOffset(1);
+    });
+    registerMediaSessionAction('seekbackward', (details) => {
+        adjustCurrentTrackPosition(-(Number(details?.seekOffset) || 10));
+    });
+    registerMediaSessionAction('seekforward', (details) => {
+        adjustCurrentTrackPosition(Number(details?.seekOffset) || 10);
+    });
+    registerMediaSessionAction('seekto', (details) => {
+        if (!details || typeof details.seekTime !== 'number') return;
+        seekCurrentTrack(details.seekTime);
+    });
+
+    syncMediaSession();
+}
+
 // APlayer Config
 const ap = new APlayer({
     container: document.getElementById('aplayer'),
@@ -585,6 +809,8 @@ const ap = new APlayer({
 window.ap = ap; 
 let currentPlayingId = null;
 window.currentPlayingId = null; 
+
+setupMediaSession();
 
 setTimeout(() => {
     const apPic = document.querySelector('.aplayer-pic');
@@ -639,6 +865,7 @@ ap.on('listswitch', (e) => {
             }
         }
     }
+    syncMediaSession(newAudio || getCurrentAPlayerAudio());
 });
 
 ap.on('play', () => {
@@ -650,6 +877,7 @@ ap.on('play', () => {
         highlightCard(currentPlayingId);
     }
     syncAllPlayButtons();
+    syncMediaSession(audio || getCurrentAPlayerAudio());
     
     if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
         window.VideoGen.updatePlayBtnState(true);
@@ -658,6 +886,7 @@ ap.on('play', () => {
 
 ap.on('pause', () => {
     syncAllPlayButtons();
+    syncMediaSession();
     if (window.VideoGen && window.VideoGen.updatePlayBtnState) {
         window.VideoGen.updatePlayBtnState(false);
     }
@@ -668,6 +897,7 @@ ap.on('ended', () => {
     window.currentPlayingId = null; 
     highlightCard(null);
     syncAllPlayButtons();
+    clearMediaSession();
 });
 
 function highlightCard(targetId) {
@@ -830,6 +1060,7 @@ function updateCardWithSong(card, song) {
     card.dataset.id = song.id;
     card.dataset.source = song.source;
     card.dataset.albumId = getSongAlbumId(song);
+    card.dataset.album = song.album || '';
     card.dataset.duration = song.duration || 0;
     card.dataset.name = song.name || card.dataset.name;
     card.dataset.artist = song.artist || card.dataset.artist;
@@ -924,6 +1155,9 @@ function updateCardWithSong(card, song) {
     syncAllPlayButtons();
     queueInspectSong(card);
     syncSongToAPlayer(oldId, song);
+    if (currentPlayingId === song.id) {
+        syncMediaSession();
+    }
 }
 
 function syncSongToAPlayer(oldId, newSong) {
@@ -933,6 +1167,7 @@ function syncSongToAPlayer(oldId, newSong) {
         const audio = ap.list.audios[index];
         audio.name = newSong.name;
         audio.artist = newSong.artist;
+        audio.album = newSong.album || '';
         audio.cover = newSong.cover;
         audio.url = buildStreamURL(newSong.id, newSong.source, newSong.name, newSong.artist, newSong.cover || '', newSong.extra ? JSON.stringify(newSong.extra) : '');
         audio.lrc = `${API_ROOT}/lyric?id=${encodeURIComponent(newSong.id)}&source=${newSong.source}`;
@@ -993,6 +1228,7 @@ function playAllAndJumpTo(btn) {
         currentPlayingId = null;
         highlightCard(null);
         syncAllPlayButtons();
+        syncMediaSession();
         return;
     }
 
@@ -1008,6 +1244,7 @@ function playAllAndJumpTo(btn) {
         playlist.push({
             name: ds.name,
             artist: ds.artist,
+            album: ds.album || '',
             url: buildStreamURL(ds.id, ds.source, ds.name, ds.artist, ds.cover || '', ds.extra || ''),
             cover: coverUrl,
             lrc: `${API_ROOT}/lyric?id=${encodeURIComponent(ds.id)}&source=${ds.source}`,

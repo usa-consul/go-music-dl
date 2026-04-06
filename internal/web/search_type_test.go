@@ -4,10 +4,12 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/guohuiyuan/go-music-dl/core"
 )
 
 func TestDefaultSourcesForSearchType(t *testing.T) {
-	wantAlbum := []string{"netease", "qq", "kugou", "kuwo"}
+	wantAlbum := core.GetAlbumSourceNames()
 	if got := defaultSourcesForSearchType("album"); !reflect.DeepEqual(got, wantAlbum) {
 		t.Fatalf("defaultSourcesForSearchType(album) = %v, want %v", got, wantAlbum)
 	}
