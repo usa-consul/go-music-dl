@@ -1,11 +1,15 @@
 package web
 
 import (
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/gin-gonic/gin"
 	"github.com/guohuiyuan/go-music-dl/core"
+	"github.com/guohuiyuan/music-lib/model"
 )
 
 func TestDefaultSourcesForSearchType(t *testing.T) {
@@ -49,5 +53,73 @@ func TestCollectionLabelsForSearchType(t *testing.T) {
 	}
 	if got := collectionLabelForSearchType("playlist"); got != "歌单" {
 		t.Fatalf("collectionLabelForSearchType(playlist) = %q, want 歌单", got)
+	}
+}
+
+func TestPlaylistDetailURLIncludesCollectionMetadata(t *testing.T) {
+	playlist := model.Playlist{
+		ID:          "123",
+		Name:        "My Playlist",
+		Description: "Top picks",
+		Cover:       "https://example.com/cover.jpg",
+		TrackCount:  42,
+		Creator:     "Creator",
+		Source:      "qq",
+		Link:        "https://y.qq.com/n/ryqq/playlist/123",
+	}
+
+	got := playlistDetailURL(RoutePrefix, collectionContentPlaylist, playlist)
+	parsed, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("playlistDetailURL parse: %v", err)
+	}
+
+	if parsed.Path != RoutePrefix+"/playlist" {
+		t.Fatalf("playlistDetailURL path = %q, want %q", parsed.Path, RoutePrefix+"/playlist")
+	}
+
+	values := parsed.Query()
+	if values.Get("id") != playlist.ID {
+		t.Fatalf("query id = %q, want %q", values.Get("id"), playlist.ID)
+	}
+	if values.Get("source") != playlist.Source {
+		t.Fatalf("query source = %q, want %q", values.Get("source"), playlist.Source)
+	}
+	if values.Get("name") != playlist.Name {
+		t.Fatalf("query name = %q, want %q", values.Get("name"), playlist.Name)
+	}
+	if values.Get("track_count") != "42" {
+		t.Fatalf("query track_count = %q, want 42", values.Get("track_count"))
+	}
+	if values.Get("link") != playlist.Link {
+		t.Fatalf("query link = %q, want %q", values.Get("link"), playlist.Link)
+	}
+}
+
+func TestImportCollectionFromQueryBuildsSongListImportButton(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	req := httptest.NewRequest("GET", "/music/playlist?id=123&source=qq&name=Song+List&cover=https%3A%2F%2Fexample.com%2Fcover.jpg&creator=Tester&track_count=99&link=https%3A%2F%2Fy.qq.com%2Fn%2Fryqq%2Fplaylist%2F123", nil)
+	ctx.Request = req
+
+	meta := importCollectionFromQuery(ctx, collectionContentPlaylist, "qq", "123", core.GetOriginalLink("qq", "123", "playlist"), 12)
+	if meta == nil {
+		t.Fatal("importCollectionFromQuery returned nil")
+	}
+	if !meta.Enabled {
+		t.Fatal("importCollectionFromQuery Enabled = false, want true")
+	}
+	if meta.Name != "Song List" {
+		t.Fatalf("meta.Name = %q, want Song List", meta.Name)
+	}
+	if meta.TrackCount != 99 {
+		t.Fatalf("meta.TrackCount = %d, want 99", meta.TrackCount)
+	}
+	if meta.ContentType != collectionContentPlaylist {
+		t.Fatalf("meta.ContentType = %q, want %q", meta.ContentType, collectionContentPlaylist)
+	}
+	if !strings.Contains(meta.HoverText, "元数据") {
+		t.Fatalf("meta.HoverText = %q, want contains 元数据", meta.HoverText)
 	}
 }

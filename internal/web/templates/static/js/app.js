@@ -1510,6 +1510,16 @@ function showEditCollectionModal(id = '', name = '', desc = '', cover = '') {
     document.getElementById('editCollectionModal').style.display = 'flex';
 }
 
+function showEditCollectionModalFromButton(btn) {
+    if (!btn) return;
+    showEditCollectionModal(
+        btn.dataset.id || '',
+        btn.dataset.name || '',
+        btn.dataset.description || '',
+        btn.dataset.cover || ''
+    );
+}
+
 function saveCollection() {
     const id = document.getElementById('editColId').value;
     const name = document.getElementById('editColName').value.trim();
@@ -1538,6 +1548,63 @@ function saveCollection() {
         } else {
             window.location.reload();
         }
+    });
+}
+
+function setImportCollectionButtonState(btn, imported) {
+    if (!btn) return;
+
+    btn.disabled = !!imported;
+    if (imported) {
+        btn.innerHTML = '<i class="fa-solid fa-check"></i> 已导入';
+        btn.style.opacity = '0.85';
+    } else {
+        btn.innerHTML = '<i class="fa-solid fa-download"></i> 导入本地';
+        btn.style.opacity = '';
+    }
+}
+
+function importCollectionFromButton(btn) {
+    if (!btn) return;
+
+    const payload = {
+        name: btn.dataset.name || '',
+        description: btn.dataset.description || '',
+        cover: btn.dataset.cover || '',
+        creator: btn.dataset.creator || '',
+        track_count: parsePositiveInt(btn.dataset.trackCount, 0),
+        source: btn.dataset.source || '',
+        external_id: btn.dataset.externalId || '',
+        link: btn.dataset.link || '',
+        content_type: btn.dataset.contentType || 'playlist'
+    };
+
+    if (!payload.source || !payload.external_id) {
+        alert('缺少导入参数');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+
+    fetch(`${API_ROOT}/collections/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }).then(r => r.json()).then(res => {
+        if (res.error) {
+            btn.disabled = false;
+            btn.style.opacity = '';
+            alert(res.error);
+            return;
+        }
+
+        setImportCollectionButtonState(btn, true);
+        alert(res.duplicate ? '该歌单/专辑已在本地列表中' : '导入成功，已加入本地歌单列表');
+    }).catch(() => {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        alert('导入失败，请稍后重试');
     });
 }
 
@@ -1617,6 +1684,16 @@ function openAddToCollectionModal(btn) {
     const imgEl = card.querySelector('.cover-wrapper img');
     if (imgEl) coverUrl = imgEl.src;
 
+    let extra = {};
+    try {
+        const parsed = JSON.parse(card.dataset.extra || '{}');
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            extra = parsed;
+        }
+    } catch (_) {
+    }
+    extra.saved_from = 'web_ui';
+
     pendingFavSong = {
         id: card.dataset.id,
         source: card.dataset.source,
@@ -1624,7 +1701,7 @@ function openAddToCollectionModal(btn) {
         artist: card.dataset.artist,
         duration: parseInt(card.dataset.duration) || 0,
         cover: coverUrl,
-        extra: { saved_from: "web_ui" }
+        extra: extra
     };
     
     document.getElementById('addToCollectionModal').style.display = 'flex';

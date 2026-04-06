@@ -17,7 +17,24 @@
             {{ end }}
         </div>
 
-        <div style="display:flex; gap:10px;">
+        <div style="display:flex; gap:10px; flex-wrap: wrap; justify-content: flex-end;">
+            {{ if .ImportCollection }}
+            <button type="button"
+                    class="ctrl-btn primary"
+                    title="{{ .ImportCollection.HoverText }}"
+                    data-name="{{.ImportCollection.Name}}"
+                    data-description="{{.ImportCollection.Description}}"
+                    data-cover="{{.ImportCollection.Cover}}"
+                    data-creator="{{.ImportCollection.Creator}}"
+                    data-track-count="{{.ImportCollection.TrackCount}}"
+                    data-source="{{.ImportCollection.Source}}"
+                    data-external-id="{{.ImportCollection.ExternalID}}"
+                    data-link="{{.ImportCollection.Link}}"
+                    data-content-type="{{.ImportCollection.ContentType}}"
+                    onclick="importCollectionFromButton(this)">
+                <i class="fa-solid fa-download"></i> 导入本地
+            </button>
+            {{ end }}
             <button type="button" class="ctrl-btn primary" onclick="playAllSongs()">
                 <i class="fa-solid fa-play"></i> 播放全部
             </button>
@@ -121,7 +138,7 @@
                     <i class="fa-solid fa-arrows-rotate"></i>
                 </button>
 
-                {{ if $.ColID }}
+                {{ if $.CanRemoveSongs }}
                 <button type="button" class="btn-circle btn-fav" title="移出当前歌单"
                         onclick="removeSongFromCollection(this, '{{$.ColID}}', '{{.ID}}', '{{.Source}}')">
                     <i class="fa-solid fa-trash"></i>

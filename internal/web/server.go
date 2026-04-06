@@ -22,7 +22,7 @@ var templateFS embed.FS
 
 const RoutePrefix = "/music"
 
-// FeatureFlags 控制前端功能按钮的显示
+// FeatureFlags controls optional frontend buttons.
 type FeatureFlags struct {
 	VgChangeCover bool
 	VgChangeAudio bool
@@ -31,6 +31,20 @@ type FeatureFlags struct {
 }
 
 var featureFlags FeatureFlags
+
+type importCollectionMeta struct {
+	Enabled     bool
+	Name        string
+	Description string
+	Cover       string
+	Creator     string
+	TrackCount  int
+	Source      string
+	ExternalID  string
+	Link        string
+	ContentType string
+	HoverText   string
+}
 
 func defaultSourcesForSearchType(searchType string) []string {
 	switch searchType {
@@ -89,7 +103,62 @@ func setDownloadHeader(c *gin.Context, filename string) {
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"; filename*=utf-8''%s", encoded, encoded))
 }
 
-func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist, q string, selected []string, errMsg string, searchType string, playlistLink string, colID string, colName string, isLocalColPage bool) {
+func playlistExtraValue(playlist model.Playlist, key string) string {
+	if playlist.Extra == nil {
+		return ""
+	}
+	return strings.TrimSpace(playlist.Extra[key])
+}
+
+func importCollectionHoverText(contentType string) string {
+	if contentType == collectionContentAlbum {
+		return "导入到本地歌单列表，保存为外部导入专辑；仅保存元数据，不保存具体歌曲明细。"
+	}
+	return "导入到本地歌单列表，保存为外部导入歌单；仅保存元数据，不保存具体歌曲明细。"
+}
+
+func playlistDetailURL(root string, searchType string, playlist model.Playlist) string {
+	if strings.TrimSpace(playlist.Source) == "local" {
+		return fmt.Sprintf("%s/collection?id=%s", root, url.QueryEscape(playlist.ID))
+	}
+
+	route := "playlist"
+	contentType := collectionContentPlaylist
+	if searchType == collectionContentAlbum {
+		route = "album"
+		contentType = collectionContentAlbum
+	}
+
+	values := url.Values{}
+	values.Set("id", playlist.ID)
+	values.Set("source", playlist.Source)
+	if name := strings.TrimSpace(playlist.Name); name != "" {
+		values.Set("name", name)
+	}
+	if description := strings.TrimSpace(playlist.Description); description != "" {
+		values.Set("description", description)
+	}
+	if cover := strings.TrimSpace(playlist.Cover); cover != "" {
+		values.Set("cover", cover)
+	}
+	if creator := strings.TrimSpace(playlist.Creator); creator != "" {
+		values.Set("creator", creator)
+	}
+	if playlist.TrackCount > 0 {
+		values.Set("track_count", strconv.Itoa(playlist.TrackCount))
+	}
+	link := strings.TrimSpace(playlist.Link)
+	if link == "" {
+		link = core.GetOriginalLink(playlist.Source, playlist.ID, contentType)
+	}
+	if link != "" {
+		values.Set("link", link)
+	}
+
+	return fmt.Sprintf("%s/%s?%s", root, route, values.Encode())
+}
+
+func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist, q string, selected []string, errMsg string, searchType string, playlistLink string, colID string, colName string, isLocalColPage bool, collectionKind string, importCollection *importCollectionMeta) {
 	allSrc := core.GetAllSourceNames()
 	desc := make(map[string]string)
 	for _, s := range allSrc {
@@ -189,6 +258,9 @@ func renderIndex(c *gin.Context, songs []model.Song, playlists []model.Playlist,
 		"PlaylistLink":       playlistLink,
 		"ColID":              colID,
 		"ColName":            colName,
+		"CollectionKind":     collectionKind,
+		"ImportCollection":   importCollection,
+		"CanRemoveSongs":     colID != "" && collectionKind == collectionKindManual,
 		"IsLocalColPage":     isLocalColPage,
 		"VgChangeCover":      featureFlags.VgChangeCover,
 		"VgChangeAudio":      featureFlags.VgChangeAudio,
@@ -208,8 +280,10 @@ func Start(port string, shouldOpenBrowser bool, flags FeatureFlags) {
 	r.Use(corsMiddleware())
 
 	tmpl := template.Must(template.New("").Funcs(template.FuncMap{
-		"artistTokens": splitArtistTokens,
-		"albumID":      songAlbumID,
+		"artistTokens":       splitArtistTokens,
+		"albumID":            songAlbumID,
+		"playlistDetailURL":  playlistDetailURL,
+		"playlistExtraValue": playlistExtraValue,
 		"tojson": func(v interface{}) string {
 			if v == nil {
 				return ""
@@ -236,7 +310,7 @@ func Start(port string, shouldOpenBrowser bool, flags FeatureFlags) {
 	api := r.Group(RoutePrefix)
 	api.Static("/videos", videoDir)
 
-	// 基础前端依赖路由
+	// 鍩虹鍓嶇渚濊禆璺敱
 	api.GET("/icon.png", func(c *gin.Context) { c.FileFromFS("templates/static/images/icon.png", http.FS(templateFS)) })
 	api.GET("/style.css", func(c *gin.Context) { c.FileFromFS("templates/static/css/style.css", http.FS(templateFS)) })
 	api.GET("/videogen.css", func(c *gin.Context) { c.FileFromFS("templates/static/css/videogen.css", http.FS(templateFS)) })
