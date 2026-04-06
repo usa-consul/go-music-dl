@@ -77,8 +77,7 @@
                     </div>
                     {{ else if or (eq $.SearchType "playlist") (eq $.SearchType "album") }}
                     <button type="button"
-                            class="btn-pill btn-pill-primary"
-                            style="padding: 6px 10px; font-size: 12px;"
+                            class="ctrl-btn primary"
                             title="{{ if eq $.SearchType "album" }}导入到本地歌单列表，保存为外部导入专辑；仅保存元数据，不保存具体歌曲明细。{{ else }}导入到本地歌单列表，保存为外部导入歌单；仅保存元数据，不保存具体歌曲明细。{{ end }}"
                             data-name="{{.Name}}"
                             data-description="{{.Description}}"

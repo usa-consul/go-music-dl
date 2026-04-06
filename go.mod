@@ -9,7 +9,7 @@ require (
 	github.com/dhowden/tag v0.0.0-20240417053706-3d75831295e8
 	github.com/gin-gonic/gin v1.11.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/guohuiyuan/music-lib v1.0.8-0.20260406102007-113dc6a5174f
+	github.com/guohuiyuan/music-lib v1.0.8-0.20260406144930-3c833d000dbf
 	github.com/spf13/cobra v1.10.2
 	gorm.io/gorm v1.31.1
 )
