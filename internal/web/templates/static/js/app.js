@@ -284,36 +284,257 @@ async function handleDownloadClick(link) {
     return true;
 }
 
-document.addEventListener('DOMContentLoaded', function() {
-    loadWebSettingsFromCache();
-    applyWebSettings(webSettings);
-    fetchWebSettings();
+let navigationAbortController = null;
+let pageNavigationEventsBound = false;
 
-    const checkboxes = document.querySelectorAll('.source-checkbox');
-    
+function isAppRoute(pathname) {
+    return pathname === API_ROOT || pathname.startsWith(`${API_ROOT}/`);
+}
+
+function bindSourceSelectorButtons(root = document) {
+    const checkboxes = root.querySelectorAll('.source-checkbox');
+
     const btnAll = document.getElementById('btn-all');
-    if(btnAll) {
-        btnAll.onclick = () => { checkboxes.forEach(cb => { if (!cb.disabled) cb.checked = true; }); };
-    }
-    const btnNone = document.getElementById('btn-none');
-    if(btnNone) {
-        btnNone.onclick = () => { checkboxes.forEach(cb => { if (!cb.disabled) cb.checked = false; }); };
+    if (btnAll) {
+        btnAll.onclick = () => {
+            checkboxes.forEach(cb => {
+                if (!cb.disabled) cb.checked = true;
+            });
+        };
     }
 
-    const initialTypeEl = document.querySelector('input[name="type"]:checked');
+    const btnNone = document.getElementById('btn-none');
+    if (btnNone) {
+        btnNone.onclick = () => {
+            checkboxes.forEach(cb => {
+                if (!cb.disabled) cb.checked = false;
+            });
+        };
+    }
+}
+
+function bindSearchForm(root = document) {
+    const searchForm = root.querySelector('#search-form');
+    if (!searchForm) return;
+
+    searchForm.onsubmit = (event) => {
+        event.preventDefault();
+
+        const pageInput = searchForm.querySelector('input[name="page"]');
+        if (pageInput) {
+            pageInput.value = '1';
+        }
+
+        const targetURL = new URL(searchForm.action, window.location.href);
+        const params = new URLSearchParams();
+        new FormData(searchForm).forEach((value, key) => {
+            params.append(key, String(value));
+        });
+        targetURL.search = params.toString();
+
+        navigateTo(targetURL.toString());
+    };
+}
+
+function bindSongCardCovers(root = document) {
+    const cards = root.querySelectorAll('.song-card');
+    cards.forEach((card, index) => {
+        queueInspectSong(card, index * INSPECT_REQUEST_DELAY_MS);
+
+        const coverWrap = card.querySelector('.cover-wrapper');
+        if (!coverWrap) return;
+
+        coverWrap.style.cursor = 'pointer';
+        coverWrap.title = '鐐瑰嚮鐢熸垚瑙嗛';
+        coverWrap.onclick = (e) => {
+            e.stopPropagation();
+            if (window.VideoGen) {
+                const img = coverWrap.querySelector('img');
+                const currentCover = img ? img.src : (card.dataset.cover || '');
+
+                window.VideoGen.open({
+                    id: card.dataset.id,
+                    source: card.dataset.source,
+                    name: card.dataset.name,
+                    artist: card.dataset.artist,
+                    cover: currentCover,
+                    duration: parseInt(card.dataset.duration) || 0
+                });
+            } else {
+                console.error("VideoGen library not loaded.");
+                alert("瑙嗛鐢熸垚缁勪欢鍔犺浇澶辫触锛岃鍒锋柊椤甸潰閲嶈瘯");
+            }
+        };
+    });
+}
+
+function initializePageContent(root = document) {
+    bindSourceSelectorButtons(root);
+    bindSearchForm(root);
+
+    const initialTypeEl = root.querySelector('input[name="type"]:checked');
     if (initialTypeEl) {
         toggleSearchType(initialTypeEl.value);
     }
 
-    const searchForm = document.getElementById('search-form');
-    if (searchForm) {
-        searchForm.addEventListener('submit', function() {
-            const pageInput = searchForm.querySelector('input[name="page"]');
-            if (pageInput) {
-                pageInput.value = '1';
-            }
-        });
+    bindSongCardCovers(root);
+    updateBatchToolbar();
+    highlightCard(currentPlayingId);
+    syncAllPlayButtons();
+    syncMediaSession();
+}
+
+function shouldHandleInternalNavigation(link, event) {
+    if (!link || event.defaultPrevented) return false;
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return false;
     }
+    if (link.hasAttribute('download')) return false;
+
+    const hrefAttr = String(link.getAttribute('href') || '').trim();
+    if (!hrefAttr || hrefAttr.startsWith('#') || hrefAttr.startsWith('javascript:') || hrefAttr.startsWith('mailto:') || hrefAttr.startsWith('tel:')) {
+        return false;
+    }
+
+    const targetAttr = String(link.getAttribute('target') || '').trim().toLowerCase();
+    if (targetAttr && targetAttr !== '_self') {
+        return false;
+    }
+
+    if (link.classList.contains('btn-download') || link.classList.contains('btn-lyric') || link.classList.contains('btn-cover')) {
+        return false;
+    }
+
+    let targetURL;
+    try {
+        targetURL = new URL(hrefAttr, window.location.href);
+    } catch (_) {
+        return false;
+    }
+
+    return targetURL.origin === window.location.origin && isAppRoute(targetURL.pathname);
+}
+
+async function navigateTo(url, options = {}) {
+    let targetURL;
+    try {
+        targetURL = new URL(url, window.location.href);
+    } catch (_) {
+        return false;
+    }
+
+    if (targetURL.origin !== window.location.origin || !isAppRoute(targetURL.pathname)) {
+        window.location.href = targetURL.toString();
+        return false;
+    }
+
+    if (navigationAbortController) {
+        navigationAbortController.abort();
+    }
+
+    const controller = new AbortController();
+    navigationAbortController = controller;
+
+    try {
+        const response = await fetch(targetURL.toString(), {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            signal: controller.signal
+        });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+        const parser = new DOMParser();
+        const nextDoc = parser.parseFromString(html, 'text/html');
+        const nextContainer = nextDoc.querySelector('.container');
+        const currentContainer = document.querySelector('.container');
+
+        if (!nextContainer || !currentContainer) {
+            throw new Error('missing container');
+        }
+
+        currentContainer.innerHTML = nextContainer.innerHTML;
+        defaultDocumentTitle = nextDoc.title || defaultDocumentTitle;
+        document.title = defaultDocumentTitle;
+
+        const historyMode = options.historyMode || 'push';
+        if (historyMode === 'replace') {
+            window.history.replaceState(null, '', targetURL.toString());
+        } else if (historyMode !== 'none') {
+            if (targetURL.toString() === window.location.href) {
+                window.history.replaceState(null, '', targetURL.toString());
+            } else {
+                window.history.pushState(null, '', targetURL.toString());
+            }
+        }
+
+        initializePageContent(currentContainer);
+
+        if (options.scroll !== false) {
+            window.scrollTo({ top: 0, behavior: 'auto' });
+        }
+
+        return true;
+    } catch (error) {
+        if (error && error.name === 'AbortError') {
+            return false;
+        }
+        window.location.href = targetURL.toString();
+        return false;
+    } finally {
+        if (navigationAbortController === controller) {
+            navigationAbortController = null;
+        }
+    }
+}
+
+function refreshCurrentPageContent(options = {}) {
+    return navigateTo(window.location.href, {
+        historyMode: 'replace',
+        scroll: false,
+        ...options
+    });
+}
+
+function bindPageNavigationEvents() {
+    if (pageNavigationEventsBound) return;
+    pageNavigationEventsBound = true;
+
+    document.addEventListener('click', async function(event) {
+        const link = event.target.closest('.btn-download');
+        if (!link) return;
+        if (!webSettings.downloadToLocal) return;
+        event.preventDefault();
+        await handleDownloadClick(link);
+    });
+
+    document.addEventListener('click', function(event) {
+        const link = event.target.closest('a');
+        if (!shouldHandleInternalNavigation(link, event)) return;
+
+        event.preventDefault();
+        navigateTo(link.href);
+    }, true);
+
+    window.addEventListener('popstate', function() {
+        navigateTo(window.location.href, {
+            historyMode: 'none',
+            scroll: false
+        });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadWebSettingsFromCache();
+    applyWebSettings(webSettings);
+    fetchWebSettings();
+    bindPageNavigationEvents();
+    initializePageContent(document);
+    return;
+    /*
 
     const cards = document.querySelectorAll('.song-card');
     cards.forEach((card, index) => {
@@ -359,6 +580,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateBatchToolbar();
 
     syncAllPlayButtons();
+    */
 });
 
 function toggleSearchType(type) {
@@ -405,9 +627,9 @@ function goToRecommend() {
     });
     
     if (selected.length === 0) {
-        window.location.href = API_ROOT + '/recommend?sources=' + supported.join('&sources=');
+        navigateTo(API_ROOT + '/recommend?sources=' + supported.join('&sources='));
     } else {
-        window.location.href = API_ROOT + '/recommend?sources=' + selected.join('&sources=');
+        navigateTo(API_ROOT + '/recommend?sources=' + selected.join('&sources='));
     }
 }
 
@@ -416,7 +638,7 @@ function goToPage(page) {
     if (!Number.isFinite(target) || target < 1) return;
     const url = new URL(window.location.href);
     url.searchParams.set('page', String(target));
-    window.location.href = url.toString();
+    navigateTo(url.toString());
 }
 
 function parsePositiveInt(value, fallbackValue) {
@@ -568,7 +790,7 @@ function scrollToTop() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-const DEFAULT_DOCUMENT_TITLE = document.title;
+let defaultDocumentTitle = document.title;
 
 function mediaSessionControllerSupported() {
     return typeof navigator !== 'undefined' && !!navigator.mediaSession;
@@ -598,7 +820,7 @@ function buildMediaSessionArtwork(coverUrl) {
 
 function updateDocumentTitleForMedia(audio) {
     if (!audio || !audio.name) {
-        document.title = DEFAULT_DOCUMENT_TITLE;
+        document.title = defaultDocumentTitle;
         return;
     }
 
@@ -1492,7 +1714,7 @@ function playAllSongs() {
 }
 
 function openCollectionManager() {
-    window.location.href = API_ROOT + '/my_collections';
+    navigateTo(API_ROOT + '/my_collections');
 }
 
 function showEditCollectionModal(id = '', name = '', desc = '', cover = '') {
@@ -1546,7 +1768,7 @@ function saveCollection() {
         if (isAddingSongModalOpen) {
             refreshAddToCollectionList();
         } else {
-            window.location.reload();
+            refreshCurrentPageContent();
         }
     });
 }
@@ -1614,7 +1836,7 @@ function deleteCollection(id) {
         .then(r => r.json())
         .then(res => {
             if (res.error) return alert(res.error);
-            window.location.reload();
+            refreshCurrentPageContent();
         });
 }
 
@@ -1737,10 +1959,10 @@ function removeSongFromCollection(btn, colId, originalSongId, originalSource) {
                 card.style.opacity = '0';
                 card.style.transform = 'translateX(30px)';
                 setTimeout(() => {
-                    window.location.reload();
+                    refreshCurrentPageContent();
                 }, 300);
             } else {
-                window.location.reload();
+                refreshCurrentPageContent();
             }
         });
 }

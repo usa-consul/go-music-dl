@@ -28,7 +28,7 @@
         {{ $contentType := playlistExtraValue . "content_type" }}
         {{ $remoteSource := playlistExtraValue . "remote_source" }}
         {{ $editable := playlistExtraValue . "editable" }}
-        <div class="playlist-card" onclick="location.href='{{playlistDetailURL $.Root $.SearchType .}}'">
+        <div class="playlist-card" onclick="navigateTo('{{playlistDetailURL $.Root $.SearchType .}}')">
             <div class="playlist-cover">
                 <img src="{{ .Cover }}" loading="lazy" onerror="this.src='https://via.placeholder.com/400?text=Cover'">
                 <span class="tag {{ if eq .Source "local" }}tag-local{{ else }}tag-src{{ end }}" style="position:absolute; top:5px; right:5px; margin:0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
