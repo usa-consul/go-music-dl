@@ -39,7 +39,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-22.04
             goos: linux
             goarch: amd64
             cgo_enabled: 1
