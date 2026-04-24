@@ -48,8 +48,9 @@ func main() {
 
 // printVersion outputs build version information to stdout
 func printVersion() {
-	fmt.Printf("go-music-dl\n")
+	fmt.Printf("go-music-dl (personal fork)\n")
 	fmt.Printf("  Version:    %s\n", Version)
 	fmt.Printf("  Commit:     %s\n", Commit)
 	fmt.Printf("  Build Date: %s\n", BuildDate)
+	fmt.Printf("  Upstream:   https://github.com/guohuiyuan/go-music-dl\n")
 }
