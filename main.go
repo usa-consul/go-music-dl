@@ -30,12 +30,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  search\t\tSearch for music across platforms\n")
 		fmt.Fprintf(os.Stderr, "\nOptions:\n")
 		flag.PrintDefaults()
+		// Print a newline after options for cleaner output
+		fmt.Fprintf(os.Stderr, "\n")
 	}
 
 	flag.Parse()
 
 	if *versionFlag || *vFlag {
 		printVersion()
+		os.Exit(0)
+	}
+
+	// If no arguments provided, print usage instead of silently failing
+	if flag.NArg() == 0 {
+		flag.Usage()
 		os.Exit(0)
 	}
 
