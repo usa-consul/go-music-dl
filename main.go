@@ -32,6 +32,7 @@ func main() {
 		flag.PrintDefaults()
 		// Print a newline after options for cleaner output
 		fmt.Fprintf(os.Stderr, "\n")
+		fmt.Fprintf(os.Stderr, "Source: https://github.com/guohuiyuan/go-music-dl\n")
 	}
 
 	flag.Parse()
@@ -61,4 +62,5 @@ func printVersion() {
 	fmt.Printf("  Commit:     %s\n", Commit)
 	fmt.Printf("  Build Date: %s\n", BuildDate)
 	fmt.Printf("  Upstream:   https://github.com/guohuiyuan/go-music-dl\n")
+	fmt.Printf("  Fork:       https://github.com/misitebao/go-music-dl\n")
 }
