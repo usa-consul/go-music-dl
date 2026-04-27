@@ -45,7 +45,7 @@ func main() {
 	// If no arguments provided, print usage instead of silently failing
 	if flag.NArg() == 0 {
 		flag.Usage()
-		os.Exit(0)
+		os.Exit(1) // exit with code 1 when no args given — more useful for scripting
 	}
 
 	// Execute the root command
